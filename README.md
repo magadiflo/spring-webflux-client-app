@@ -47,3 +47,135 @@ public record ProductDTO(String id, String name, Double price, LocalDate createA
                          CategoryDTO categoryDTO) {
 }
 ````
+
+## Creando el componente Service implementado con WebClient
+
+Crearemos primero la interfaz que tendrá todos los métodos a implementar:
+
+````java
+public interface IProductService {
+    Flux<ProductDTO> findAllProducts();
+
+    Mono<ProductDTO> findProduct(String id);
+
+    Mono<ProductDTO> saveProduct(ProductDTO productDTO);
+
+    Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO);
+
+    Mono<Void> deleteProduct(String id);
+}
+````
+
+Realizamos la implementación concreta de nuestra interfaz **IProductService** donde inyectaremos el client http
+**WebClient** que configuramos como un @Bean en la clase de configuración **ApplicationConfig**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+
+    private final WebClient client;
+
+    public ProductServiceImpl(WebClient client) {
+        this.client = client;
+    }
+
+    @Override
+    public Flux<ProductDTO> findAllProducts() {
+        return this.client.get()
+                .accept(MediaType.APPLICATION_JSON)
+                .exchangeToFlux(response -> response.bodyToFlux(ProductDTO.class));
+    }
+
+    @Override
+    public Mono<ProductDTO> findProduct(String id) {
+        return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
+                .accept(MediaType.APPLICATION_JSON)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.OK)) {
+                        return response.bodyToMono(ProductDTO.class);
+                    }
+                    return response.createError();
+                });
+    }
+
+    @Override
+    public Mono<ProductDTO> saveProduct(ProductDTO productDTO) {
+        return null;
+    }
+
+    @Override
+    public Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO) {
+        return null;
+    }
+
+    @Override
+    public Mono<Void> deleteProduct(String id) {
+        return null;
+    }
+}
+````
+
+Como observamos en el código anterior, por el momento solo hemos implementado los métodos **findAllProducts()** y el
+método **findProduct()**. Ambos métodos realizan casi lo mismo, con la diferencia que uno recupera todos los productos
+y el oto método solo un producto, así que explicaré la implementación del método **findProduct()**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+    /* omitted code */
+    @Override
+    public Mono<ProductDTO> findProduct(String id) {
+        return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
+                .accept(MediaType.APPLICATION_JSON)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.OK)) {
+                        return response.bodyToMono(ProductDTO.class);
+                    }
+                    return response.createError();
+                });
+    }
+    /* omitted code */
+}
+````
+
+- En el método utilizamos el **cliente http WebClient** que inyectamos por constructor para hacer la petición `get()`
+  hacia el endpoint que configuramos en el @Bean de la clase **ApplicationConfig**.
+- Como vamos a buscar un producto, necesitamos completar el url agregándole la uri `/{id}` para buscar el producto por
+  el identificador que le pasemos.
+- El operador `accept()` define el tipo de **MediaType** que esperamos recibir como Response del endpoint a consultar.
+- El operador `exchangeToMono` (alternativa al operador `retrieve()`) brinda más control a través del acceso a
+  **ClientResponse**. Esto puede ser útil para escenarios avanzados, por ejemplo, para decodificar la respuesta de
+  manera diferente según el estado de la respuesta, un claro ejemplo es lo que hacemos en nuestro método
+  **findProduct()**:
+
+   ````
+  .exchangeToMono(response -> {
+      if (response.statusCode().equals(HttpStatus.OK)) {
+          return response.bodyToMono(ProductDTO.class);
+      }
+      return response.createError();
+  });
+   ````
+
+Ahora, en el código implementado por Andrés Guzmán utiliza el operador `retrieve()` quien brinda acceso al estado de la
+respuesta y los encabezados a través de ResponseEntity junto con el manejo del estado de error.
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+    /* omitted code */
+    @Override
+    public Mono<ProductDTO> findProduct(String id) {
+        return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(Producto.class);
+    }
+    /* omitted code */
+}
+````
+
+En mi caso, seguiré usando el `exchangeToMono` o `exchangeToFlux`.
