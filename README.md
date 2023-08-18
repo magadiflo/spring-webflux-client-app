@@ -32,3 +32,18 @@ WebClient tiene su método estático `WebClient.create()` para poder crear un nu
 defecto. Ahora, existe además una variante de ese método y es el que usamos en el código anterior donde le pasámos una
 url base, esa **url base se usará para todos los request que se hagan con WebClient.**
 
+## Creando las clases models DTO
+
+Crearemos nuestros DTOs Category y Product correspondiente al Category y Product del microservicio
+**spring-webflux-api-rest**:
+
+````java
+public record CategoryDTO(String id, String name) {
+}
+````
+
+````java
+public record ProductDTO(String id, String name, Double price, LocalDate createAt, String image,
+                         CategoryDTO categoryDTO) {
+}
+````
