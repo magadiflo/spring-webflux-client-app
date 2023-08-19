@@ -179,3 +179,56 @@ public class ProductServiceImpl implements IProductService {
 ````
 
 En mi caso, seguiré usando el `exchangeToMono` o `exchangeToFlux`.
+
+## Implementando el CRUD en el Service
+
+Ahora toca implementar los demás métodos de nuestro **ProductService**, estas implementaciones serán similares a lo que
+expliqué para los métodos **findAllProducts()** y **findProduct()**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+
+    /* other code */
+
+    @Override
+    public Mono<ProductDTO> saveProduct(ProductDTO productDTO) {
+        return this.client.post()
+                .contentType(MediaType.APPLICATION_JSON) // <-- tipo de contenido que enviamos en el Request
+                .accept(MediaType.APPLICATION_JSON)      // <-- tipo de contenido que aceptamos en el Response
+                .bodyValue(productDTO)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.CREATED)) {
+                        return response.bodyToMono(ProductDTO.class);
+                    }
+                    return response.createError();
+                });
+    }
+
+    @Override
+    public Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO) {
+        return this.client.put().uri("/{id}", Collections.singletonMap("id", id))
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .bodyValue(productDTO)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.OK)) {
+                        return response.bodyToMono(ProductDTO.class);
+                    }
+                    return response.createError();
+                });
+    }
+
+    @Override
+    public Mono<Void> deleteProduct(String id) {
+        return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.NO_CONTENT)) {
+                        return response.bodyToMono(Void.class);
+                    }
+                    return response.createError();
+                });
+    }
+}
+````
