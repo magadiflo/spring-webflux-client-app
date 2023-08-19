@@ -1,17 +1,17 @@
 package com.magadiflo.webflux.client.app.models.services;
 
-import com.magadiflo.webflux.client.app.models.dto.ProductDTO;
+import com.magadiflo.webflux.client.app.models.dto.Product;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface IProductService {
-    Flux<ProductDTO> findAllProducts();
+    Flux<Product> findAllProducts();
 
-    Mono<ProductDTO> findProduct(String id);
+    Mono<Product> findProduct(String id);
 
-    Mono<ProductDTO> saveProduct(ProductDTO productDTO);
+    Mono<Product> saveProduct(Product product);
 
-    Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO);
+    Mono<Product> updateProduct(String id, Product product);
 
     Mono<Void> deleteProduct(String id);
 }

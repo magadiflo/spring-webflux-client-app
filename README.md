@@ -11,7 +11,7 @@ Cambiamos el puerto de este microservicio, ya que por defecto es el 8080 quien y
 microservicio **spring-webflux-api-rest**:
 
 ````properties
-server.port=8090
+server.port=8095
 ````
 
 Ahora, configuramos nuestro **cliente http (WebClient)** quien nos permitirá consumir el api rest. Creamos el
@@ -38,15 +38,21 @@ Crearemos nuestros DTOs Category y Product correspondiente al Category y Product
 **spring-webflux-api-rest**:
 
 ````java
-public record CategoryDTO(String id, String name) {
+public record Category(String id, String name) {
 }
 ````
 
 ````java
-public record ProductDTO(String id, String name, Double price, LocalDate createAt, String image,
-                         CategoryDTO categoryDTO) {
+public record Product(String id, String name, Double price, LocalDate createAt, String image, Category category) {
 }
 ````
+
+**NOTA**
+
+> Estoy creando los DTOs con Records para que sean datos inmutables, ya que utilizaremos estos DTOs para recepcionar
+> información del endpoint. **Es importante que los nombres de los records y sus propiedades sean iguales a los nombres
+> de las clases y sus propiedades con las que son enviadas** para que el nombre de las clases y atributos **se mapeen
+> correctamente.**
 
 ## Creando el componente Service implementado con WebClient
 
@@ -54,13 +60,13 @@ Crearemos primero la interfaz que tendrá todos los métodos a implementar:
 
 ````java
 public interface IProductService {
-    Flux<ProductDTO> findAllProducts();
+    Flux<Product> findAllProducts();
 
-    Mono<ProductDTO> findProduct(String id);
+    Mono<Product> findProduct(String id);
 
-    Mono<ProductDTO> saveProduct(ProductDTO productDTO);
+    Mono<Product> saveProduct(Product product);
 
-    Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO);
+    Mono<Product> updateProduct(String id, Product product);
 
     Mono<Void> deleteProduct(String id);
 }
@@ -81,31 +87,26 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
-    public Flux<ProductDTO> findAllProducts() {
+    public Flux<Product> findAllProducts() {
         return this.client.get()
                 .accept(MediaType.APPLICATION_JSON)
-                .exchangeToFlux(response -> response.bodyToFlux(ProductDTO.class));
+                .exchangeToFlux(response -> response.bodyToFlux(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> findProduct(String id) {
+    public Mono<Product> findProduct(String id) {
         return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
                 .accept(MediaType.APPLICATION_JSON)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.OK)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> saveProduct(ProductDTO productDTO) {
+    public Mono<Product> saveProduct(Product product) {
         return null;
     }
 
     @Override
-    public Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO) {
+    public Mono<Product> updateProduct(String id, Product product) {
         return null;
     }
 
@@ -126,15 +127,10 @@ y el oto método solo un producto, así que explicaré la implementación del m�
 public class ProductServiceImpl implements IProductService {
     /* omitted code */
     @Override
-    public Mono<ProductDTO> findProduct(String id) {
+    public Mono<Product> findProduct(String id) {
         return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
                 .accept(MediaType.APPLICATION_JSON)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.OK)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
     /* omitted code */
 }
@@ -145,15 +141,28 @@ public class ProductServiceImpl implements IProductService {
 - Como vamos a buscar un producto, necesitamos completar el url agregándole la uri `/{id}` para buscar el producto por
   el identificador que le pasemos.
 - El operador `accept()` define el tipo de **MediaType** que esperamos recibir como Response del endpoint a consultar.
-- El operador `exchangeToMono` (alternativa al operador `retrieve()`) brinda más control a través del acceso a
-  **ClientResponse**. Esto puede ser útil para escenarios avanzados, por ejemplo, para decodificar la respuesta de
-  manera diferente según el estado de la respuesta, un claro ejemplo es lo que hacemos en nuestro método
-  **findProduct()**:
+- El operador `exchangeToMono` (alternativa al operador `retrieve()`) nos permite crear un **Mono** a partir de la
+  respuesta obtenida.
 
    ````
+   exchangeToMono(response -> response.bodyToMono(Product.class));
+   ````
+  Por ahora, la implementación anterior con el `exchangeToMono()` es suficiente, no necesitamos hacer más. Ahora,
+  como estamos en el endpoint que busca un producto, puede ser que el id pasado por parámetro no exista y el endpoint
+  al que consultamos nos retornará un **404 Not Fount**, no debemos preocuparnos, ya que nuestro **handlerFunction**
+  **findProduct()** al ver que el endpoint le retorna un Mono vacío, eso es lo que le mandará al **ProductHanlder**, y
+  es en el **ProductHandler** que manejamos esa alternativa utilizando el operador
+  `switchIfEmpty(ServerResponse.notFound().build())`.
+
+  Una cosa adicional sobre el `exchangeToMono` es que brinda más control a través del acceso a **ClientResponse**. Esto
+  puede ser útil para escenarios avanzados, por ejemplo, para decodificar la respuesta de manera diferente según el
+  estado de la respuesta. Un ejemplo de uso podría ser el siguiente:
+
+   ````
+  ...
   .exchangeToMono(response -> {
       if (response.statusCode().equals(HttpStatus.OK)) {
-          return response.bodyToMono(ProductDTO.class);
+          return response.bodyToMono(Product.class);
       }
       return response.createError();
   });
@@ -193,42 +202,151 @@ public class ProductServiceImpl implements IProductService {
     /* other code */
 
     @Override
-    public Mono<ProductDTO> saveProduct(ProductDTO productDTO) {
+    public Mono<Product> saveProduct(Product product) {
         return this.client.post()
-                .contentType(MediaType.APPLICATION_JSON) // <-- tipo de contenido que enviamos en el Request
-                .accept(MediaType.APPLICATION_JSON)      // <-- tipo de contenido que aceptamos en el Response
-                .bodyValue(productDTO)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.CREATED)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
+                .accept(MediaType.APPLICATION_JSON)         // <-- tipo de contenido que aceptamos en el Response
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO) {
+    public Mono<Product> updateProduct(String id, Product product) {
         return this.client.put().uri("/{id}", Collections.singletonMap("id", id))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
-                .bodyValue(productDTO)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.OK)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
     public Mono<Void> deleteProduct(String id) {
         return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.NO_CONTENT)) {
-                        return response.bodyToMono(Void.class);
-                    }
-                    return response.createError();
-                });
+                .exchangeToMono(response -> response.bodyToMono(Void.class));
     }
 }
+````
+
+## Creando el componente Handler implementado con el RouterFunction
+
+Crearemos nuestros handlerFunctions en el componente ProductHandler. Es importante resaltar que **todo método handler
+siempre va a retornar** un `Mono<ServerResponse>`:
+
+````java
+
+@Component
+public class ProductHandler {
+    private final IProductService productService;
+
+    public ProductHandler(IProductService productService) {
+        this.productService = productService;
+    }
+
+    public Mono<ServerResponse> findAllProducts(ServerRequest request) {
+        Flux<Product> productFlux = this.productService.findAllProducts();
+        return ServerResponse.ok().body(productFlux, Product.class);
+    }
+
+    public Mono<ServerResponse> showProduct(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return this.productService.findProduct(id)
+                .flatMap(product -> ServerResponse.ok().bodyValue(product))
+                .switchIfEmpty(ServerResponse.notFound().build()); //<-- Cuando el producto buscado no existe
+    }
+}
+````
+
+Ahora toca crear la clase de configuración para nuestros **RouterFunctions**:
+
+````java
+
+@Configuration
+public class RouterConfig {
+    @Bean
+    public RouterFunction<ServerResponse> routes(ProductHandler handler) {
+        return RouterFunctions.route(RequestPredicates.GET("/api/v1/client-app"), handler::findAllProducts)
+                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct);
+    }
+}
+````
+
+Probamos estos dos endpoints, pero **antes es necesario tener levantado el proyecto spring-webflux-api-rest**:
+
+Lista de productos:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app | jq
+
+--- Respuesta
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+[
+  {
+    "id": "64e011da9b83116d8415b40d",
+    "name": "Sony Cámara HD",
+    "price": 680.6,
+    "createAt": "2023-08-18",
+    "image": null,
+    "category": {
+      "id": "64e011da9b83116d8415b408",
+      "name": "Electrónico"
+    }
+  },
+  {
+    "id": "64e011da9b83116d8415b419",
+    "name": "Silla de oficina",
+    "price": 540,
+    "createAt": "2023-08-18",
+    "image": null,
+    "category": {
+      "id": "64e011da9b83116d8415b40a",
+      "name": "Muebles"
+    }
+  },
+  {...},
+  {
+    "id": "64e011da9b83116d8415b415",
+    "name": "Sillón 3 piezas",
+    "price": 10,
+    "createAt": "2023-08-18",
+    "image": null,
+    "category": {
+      "id": "64e011da9b83116d8415b40a",
+      "name": "Muebles"
+    }
+  }
+]
+````
+
+Ver el producto con un id existente en la base de datos:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app/64e011da9b83116d8415b415 | jq
+
+--- Respuesta
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 171
+{
+  "id": "64e011da9b83116d8415b415",
+  "name": "Sillón 3 piezas",
+  "price": 10,
+  "createAt": "2023-08-18",
+  "image": null,
+  "category": {
+    "id": "64e011da9b83116d8415b40a",
+    "name": "Muebles"
+  }
+}
+````
+
+Ver un producto con id que no existe en la base de datos:
+
+````bash
+ curl -v http://localhost:8095/api/v1/client-app/555555555555 | jq
+
+--- Respuesta
+< HTTP/1.1 404 Not Found
+< content-length: 0
 ````

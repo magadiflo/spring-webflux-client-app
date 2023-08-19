@@ -1,4 +1,4 @@
 package com.magadiflo.webflux.client.app.models.dto;
 
-public record CategoryDTO(String id, String name) {
+public record Category(String id, String name) {
 }

@@ -1,7 +1,6 @@
 package com.magadiflo.webflux.client.app.models.services;
 
-import com.magadiflo.webflux.client.app.models.dto.ProductDTO;
-import org.springframework.http.HttpStatus;
+import com.magadiflo.webflux.client.app.models.dto.Product;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -20,60 +19,40 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
-    public Flux<ProductDTO> findAllProducts() {
+    public Flux<Product> findAllProducts() {
         return this.client.get()
                 .accept(MediaType.APPLICATION_JSON)
-                .exchangeToFlux(response -> response.bodyToFlux(ProductDTO.class));
+                .exchangeToFlux(response -> response.bodyToFlux(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> findProduct(String id) {
+    public Mono<Product> findProduct(String id) {
         return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
                 .accept(MediaType.APPLICATION_JSON)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.OK)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> saveProduct(ProductDTO productDTO) {
+    public Mono<Product> saveProduct(Product product) {
         return this.client.post()
                 .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
                 .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
-                .bodyValue(productDTO)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.CREATED)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
-    public Mono<ProductDTO> updateProduct(String id, ProductDTO productDTO) {
+    public Mono<Product> updateProduct(String id, Product product) {
         return this.client.put().uri("/{id}", Collections.singletonMap("id", id))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
-                .bodyValue(productDTO)
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.OK)) {
-                        return response.bodyToMono(ProductDTO.class);
-                    }
-                    return response.createError();
-                });
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
     public Mono<Void> deleteProduct(String id) {
         return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
-                .exchangeToMono(response -> {
-                    if (response.statusCode().equals(HttpStatus.NO_CONTENT)) {
-                        return response.bodyToMono(Void.class);
-                    }
-                    return response.createError();
-                });
+                .exchangeToMono(response -> response.bodyToMono(Void.class));
     }
 }
