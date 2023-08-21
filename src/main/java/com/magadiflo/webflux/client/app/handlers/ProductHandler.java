@@ -41,6 +41,17 @@ public class ProductHandler {
                 );
     }
 
+    public Mono<ServerResponse> createProductWithValidation(ServerRequest request) {
+        String requestPathValue = request.requestPath().value();
+        Mono<Product> productMono = request.bodyToMono(Product.class);
+        return productMono
+                .flatMap(this.productService::saveProductWithValidation)
+                .flatMap(productDB -> ServerResponse
+                        .created(URI.create(requestPathValue + "/" + productDB.id()))
+                        .bodyValue(productDB)
+                );
+    }
+
     public Mono<ServerResponse> updateProduct(ServerRequest request) {
         String id = request.pathVariable("id");
         Mono<Product> productMono = request.bodyToMono(Product.class);

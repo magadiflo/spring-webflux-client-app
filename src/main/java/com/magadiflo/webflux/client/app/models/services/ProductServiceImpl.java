@@ -43,6 +43,15 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
+    public Mono<Product> saveProductWithValidation(Product product) {
+        return this.client.post().uri("/create-product-with-validation")
+                .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
+                .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
+    }
+
+    @Override
     public Mono<Product> updateProduct(String id, Product product) {
         return this.client.put().uri("/{id}", Collections.singletonMap("id", id))
                 .contentType(MediaType.APPLICATION_JSON)

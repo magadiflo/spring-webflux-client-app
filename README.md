@@ -490,3 +490,133 @@ curl -v -X DELETE http://localhost:8095/api/v1/client-app/64e3a16b808dbc56d1959f
 >
 < HTTP/1.1 404 Not Found
 ````
+
+## Implementando el método crear que tiene validación en el Api Rest
+
+En nuestro API Rest tenemos dos métodos para crear productos, **uno cuenta con validación y el otro no.** Hasta ahora
+solo hemos implementado el método que no cuenta con validación, en ese sentido, toca implementar el método que sí
+cuenta con validación.
+
+Creamos un nuevo método en nuestra interfaz **IProductService:**
+
+````java
+public interface IProductService {
+    /* omitted code */
+    Mono<Product> saveProductWithValidation(Product product);
+    /* omitted code */
+}
+````
+
+Implementamos el método en el **ProductServiceImpl:**
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+    /* omitted code */
+    @Override
+    public Mono<Product> saveProductWithValidation(Product product) {
+        return this.client.post().uri("/create-product-with-validation") //<-- Uri del endpoint que crea un producto pero con validación
+                .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
+                .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
+                .bodyValue(product)
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
+    }
+    /* omitted code */
+}
+````
+
+Creamos su respectivo **handlerFunction**:
+
+````java
+
+@Component
+public class ProductHandler {
+    /* omitted code */
+    public Mono<ServerResponse> createProductWithValidation(ServerRequest request) {
+        String requestPathValue = request.requestPath().value();
+        Mono<Product> productMono = request.bodyToMono(Product.class);
+        return productMono
+                .flatMap(this.productService::saveProductWithValidation)
+                .flatMap(productDB -> ServerResponse
+                        .created(URI.create(requestPathValue + "/" + productDB.id()))
+                        .bodyValue(productDB)
+                );
+    }
+    /* omitted code */
+}
+````
+
+Finalmente agregamos el endpoint correspondiente al handlerFunction **createProductWithValidation():**
+
+````java
+
+@Configuration
+public class RouterConfig {
+    @Bean
+    public RouterFunction<ServerResponse> routes(ProductHandler handler) {
+        return RouterFunctions.route(RequestPredicates.GET("/api/v1/client-app"), handler::findAllProducts)
+                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app"), handler::createProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app/create-product-with-validation"), handler::createProductWithValidation)
+                .andRoute(RequestPredicates.PUT("/api/v1/client-app/{id}"), handler::updateProduct)
+                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct);
+    }
+}
+````
+
+Creando un producto con nuestro endpoint de validación:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Pintura Rupestre\", \"price\": 2500.50, \"category\": {\"id\": \"64e3a42ac3cc8e7a5cadc4b4\", \"name\": \"Decoración\"}}" http://localhost:8095/api/v1/client-app/create-product-with-validation | jq
+
+--- Respuesta
+>
+< HTTP/1.1 201 Created
+< Location: /api/v1/client-app/create-product-with-validation/64e3a950c3cc8e7a5cadc4c5
+< Content-Type: application/json
+<
+{
+  "id": "64e3a950c3cc8e7a5cadc4c5",
+  "name": "Pintura Rupestre",
+  "price": 2500.5,
+  "createAt": "2023-08-21",
+  "image": null,
+  "category": {
+    "id": "64e3a42ac3cc8e7a5cadc4b4",
+    "name": "Decoración"
+  }
+}
+````
+
+Creando un producto sin datos con nuestro endpoint de validación:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{}" http://localhost:8095/api/v1/client-app/create-product-with-validation | jq
+
+--- Respuesta
+>
+< HTTP/1.1 500 Internal Server Error
+< Content-Type: application/json
+<
+{
+  "timestamp": "2023-08-21T18:15:20.186+00:00",
+  "path": "/api/v1/client-app/create-product-with-validation",
+  "status": 500,
+  "error": "Internal Server Error",
+  "requestId": "c27ac726-3"
+}
+````
+
+Como observamos el resultado anterior **el error 500 ocurre en este microservicio de cliente
+(spring-webflux-client-app)**, mientras que nuestro **spring-webflux-api-rest** está retornando un error
+**400 Bad Request** junto a los campos que han sido validados como incorrectos.
+
+**NOTA**
+
+> Aunque el error 400 Bad Request del proyecto **spring-webflux-api-rest** no se muestra en consola del IDE IntelliJ
+> IDEA (habría que hacer una configuración en el application.properties si queremos verlo) **sabemos que sí está
+> retornando eso**, ya que podemos hacer una petición al endpoint del mismo proyecto **spring-webflux-api-rest**
+> http://localhost:8080/api/v2/products/create-product-with-validation y ver en el **cmd** el error **400 Bad Request**
+> junto a los campos que han sido validados como incorrectos.
+

@@ -10,6 +10,7 @@ public interface IProductService {
     Mono<Product> findProduct(String id);
 
     Mono<Product> saveProduct(Product product);
+    Mono<Product> saveProductWithValidation(Product product);
 
     Mono<Product> updateProduct(String id, Product product);
 
