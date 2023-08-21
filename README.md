@@ -68,7 +68,7 @@ public interface IProductService {
 
     Mono<Product> updateProduct(String id, Product product);
 
-    Mono<Void> deleteProduct(String id);
+    Mono<Boolean> deleteProduct(String id);
 }
 ````
 
@@ -111,7 +111,7 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
-    public Mono<Void> deleteProduct(String id) {
+    public Mono<Boolean> deleteProduct(String id) {
         return null;
     }
 }
@@ -149,7 +149,7 @@ public class ProductServiceImpl implements IProductService {
    ````
   Por ahora, la implementación anterior con el `exchangeToMono()` es suficiente, no necesitamos hacer más. Ahora,
   como estamos en el endpoint que busca un producto, puede ser que el id pasado por parámetro no exista y el endpoint
-  al que consultamos nos retornará un **404 Not Fount**, no debemos preocuparnos, ya que nuestro **handlerFunction**
+  al que consultamos nos retornará un **404 Not Fount**, no debemos preocuparnos, ya que nuestro **ProductServiceImpl**
   **findProduct()** al ver que el endpoint le retorna un Mono vacío, eso es lo que le mandará al **ProductHanlder**, y
   es en el **ProductHandler** que manejamos esa alternativa utilizando el operador
   `switchIfEmpty(ServerResponse.notFound().build())`.
@@ -191,8 +191,8 @@ En mi caso, seguiré usando el `exchangeToMono` o `exchangeToFlux`.
 
 ## Implementando el CRUD en el Service
 
-Ahora toca implementar los demás métodos de nuestro **ProductService**, estas implementaciones serán similares a lo que
-expliqué para los métodos **findAllProducts()** y **findProduct()**:
+Ahora toca implementar los demás métodos de nuestro **ProductServiceImpl**, estas implementaciones serán similares a lo
+que expliqué para los métodos **findAllProducts()** y **findProduct()**:
 
 ````java
 
@@ -220,9 +220,9 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
-    public Mono<Void> deleteProduct(String id) {
+    public Mono<Boolean> deleteProduct(String id) {
         return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
-                .exchangeToMono(response -> response.bodyToMono(Void.class));
+                .exchangeToMono(response -> response.statusCode().equals(HttpStatus.NO_CONTENT) ? Mono.just(true) : Mono.just(false));
     }
 }
 ````
@@ -349,4 +349,144 @@ Ver un producto con id que no existe en la base de datos:
 --- Respuesta
 < HTTP/1.1 404 Not Found
 < content-length: 0
+````
+
+## Implementando el CRUD en el Handler
+
+Implementamos los métodos restantes del handler:
+
+````java
+
+@Component
+public class ProductHandler {
+    /* omitted code */
+    public Mono<ServerResponse> createProduct(ServerRequest request) {
+        String requestPathValue = request.requestPath().value();
+        Mono<Product> productMono = request.bodyToMono(Product.class);
+        return productMono
+                .flatMap(this.productService::saveProduct)
+                .flatMap(productDB -> ServerResponse
+                        .created(URI.create(requestPathValue + "/" + productDB.id()))
+                        .bodyValue(productDB)
+                );
+    }
+
+    public Mono<ServerResponse> updateProduct(ServerRequest request) {
+        String id = request.pathVariable("id");
+        Mono<Product> productMono = request.bodyToMono(Product.class);
+        return productMono
+                .flatMap(product -> this.productService.updateProduct(id, product))
+                .flatMap(updatedProductDB -> ServerResponse.ok().bodyValue(updatedProductDB))
+                .switchIfEmpty(ServerResponse.notFound().build());
+    }
+
+    public Mono<ServerResponse> deleteProduct(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return this.productService.deleteProduct(id)
+                .flatMap(wasDeleted -> wasDeleted ? Mono.just(true) : Mono.empty())
+                .flatMap(wasDeleted -> ServerResponse.noContent().build())
+                .switchIfEmpty(ServerResponse.notFound().build());
+    }
+}
+````
+
+Luego, definimos sus rutas desde donde accederemos vía http:
+
+````java
+
+@Configuration
+public class RouterConfig {
+    @Bean
+    public RouterFunction<ServerResponse> routes(ProductHandler handler) {
+        return RouterFunctions.route(RequestPredicates.GET("/api/v1/client-app"), handler::findAllProducts)
+                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app"), handler::createProduct)
+                .andRoute(RequestPredicates.PUT("/api/v1/client-app/{id}"), handler::updateProduct)
+                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct);
+    }
+}
+````
+
+### Realizando pruebas a los endpoints implementados
+
+**NOTA**
+
+> Es importante tener el proyecto **spring-webflux-api-rest** levantado y obviamente el proyecto
+> **spring-webflux-client-app**, que es donde implementamos la última parte del CRUD.
+
+Creando un producto:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Cuadro de Picazzo\", \"price\": 550.80, \"category\": {\"id\": \"64e38ad2808dbc56d1959f1e\", \"name\": \"Decoración\"}}" http://localhost:8095/api/v1/client-app | jq
+
+--- Respuesta
+<
+< HTTP/1.1 201 Created
+< Location: /api/v1/client-app/64e3a16b808dbc56d1959f2e
+< Content-Type: application/json
+<
+{
+  "id": "64e3a16b808dbc56d1959f2e",
+  "name": "Cuadro de Picazzo",
+  "price": 550.8,
+  "createAt": "2023-08-21",
+  "image": null,
+  "category": {
+    "id": "64e38ad2808dbc56d1959f1e",
+    "name": "Decoración"
+  }
+}
+````
+
+Actualizando un producto con **id existente:**
+
+````bash
+curl -v -X PUT -H "Content-Type: application/json" -d "{\"name\": \"Pintura Miguel Angel\", \"price\": 8900.80, \"category\": {\"id\": \"64e38ad2808dbc56d1959f1e\", \"name\": \"Decoración\"}}" http://localhost:8095/api/v1/client-app/64e3a16b808dbc56d1959f2e | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e3a16b808dbc56d1959f2e",
+  "name": "Pintura Miguel Angel",
+  "price": 8900.8,
+  "createAt": "2023-08-21",
+  "image": null,
+  "category": {
+    "id": "64e38ad2808dbc56d1959f1e",
+    "name": "Decoración"
+  }
+}
+````
+
+Actualizando un producto con **id no existente:**
+
+````bash
+curl -v -X PUT -H "Content-Type: application/json" -d "{\"name\": \"Pintura Miguel Angel\", \"price\": 8900.80, \"category\": {\"id\": \"64e38ad2808dbc56d1959f1e\", \"name\": \"Decoración\"}}" http://localhost:8095/api/v1/client-app/64e3a16b808dbc56d1959f2e | jq
+
+--- Respuesta
+>
+< HTTP/1.1 404 Not Found
+````
+
+Eliminando el producto con **id existente:**
+
+````bash
+curl -v -X DELETE http://localhost:8095/api/v1/client-app/64e3a16b808dbc56d1959f2e | jq
+ 
+--- Respuesta
+>
+< HTTP/1.1 204 No Content
+````
+
+Eliminando el producto con **id no existente:**
+
+````bash
+curl -v -X DELETE http://localhost:8095/api/v1/client-app/64e3a16b808dbc56d1959f2e | jq
+
+--- Respuesta
+>
+< HTTP/1.1 404 Not Found
 ````

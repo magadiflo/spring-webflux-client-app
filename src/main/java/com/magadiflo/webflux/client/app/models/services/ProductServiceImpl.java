@@ -1,6 +1,7 @@
 package com.magadiflo.webflux.client.app.models.services;
 
 import com.magadiflo.webflux.client.app.models.dto.Product;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -51,8 +52,8 @@ public class ProductServiceImpl implements IProductService {
     }
 
     @Override
-    public Mono<Void> deleteProduct(String id) {
+    public Mono<Boolean> deleteProduct(String id) {
         return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
-                .exchangeToMono(response -> response.bodyToMono(Void.class));
+                .exchangeToMono(response -> response.statusCode().equals(HttpStatus.NO_CONTENT) ? Mono.just(true) : Mono.just(false));
     }
 }

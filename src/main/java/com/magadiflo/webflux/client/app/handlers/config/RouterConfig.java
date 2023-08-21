@@ -10,6 +10,9 @@ public class RouterConfig {
     @Bean
     public RouterFunction<ServerResponse> routes(ProductHandler handler) {
         return RouterFunctions.route(RequestPredicates.GET("/api/v1/client-app"), handler::findAllProducts)
-                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct);
+                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app"), handler::createProduct)
+                .andRoute(RequestPredicates.PUT("/api/v1/client-app/{id}"), handler::updateProduct)
+                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct);
     }
 }

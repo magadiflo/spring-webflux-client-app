@@ -13,5 +13,5 @@ public interface IProductService {
 
     Mono<Product> updateProduct(String id, Product product);
 
-    Mono<Void> deleteProduct(String id);
+    Mono<Boolean> deleteProduct(String id);
 }
