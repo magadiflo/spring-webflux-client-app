@@ -620,3 +620,156 @@ Como observamos el resultado anterior **el error 500 ocurre en este microservici
 > http://localhost:8080/api/v2/products/create-product-with-validation y ver en el **cmd** el error **400 Bad Request**
 > junto a los campos que han sido validados como incorrectos.
 
+## Validando el handler createProductWithValidation de nuestro microservicio cliente
+
+En el apartado anterior implementamos el handlerFunction **createProductWithValidation()** que llama al endpoint
+`http://localhost:8080/api/v2/products/create-product-with-validation` ubicado en el proyecto
+**spring-webflux-api-rest** y observamos que cuando mandamos un producto con datos incorrectos, el endpoint del api rest
+que consumimos responde con un `400 BAD_REQUEST` trayendo consigo el mensaje de los campos que han sido validados como
+incorrectos.
+
+Ahora, en nuestro microservicio **spring-webflux-client-app** el handlerFunction **createProductWithValidation** no está
+manejando el error proporcionado por el api rest de consumo, simplemente, si la solicitud falla, lanza un
+`500 Internal Server Error`.
+
+Para manejar la excepción retornada por el api rest agregaremos en el operador `.exchangeToMono()` la verificación del
+status code retornado por el api rest, esto lo hacemos en la función **saveProductWithValidation()** del
+**ProductServiceImpl**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+    /* omitted code */
+    @Override
+    public Mono<Product> saveProductWithValidation(Product product) {
+        return this.client.post().uri("/create-product-with-validation")
+                .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
+                .accept(MediaType.APPLICATION_JSON)         // <-- tipo de contenido que aceptamos en el Response
+                .bodyValue(product)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.CREATED)) { // (1)
+                        return response.bodyToMono(Product.class);
+                    }
+                    return response.createError();                          // (2)
+                });
+    }
+    /* omitted code */
+}
+````
+
+- **(1)**, verificamos si el StatusCode retornado por el API Rest es **CREATED**, si es así, retornamos el producto
+  devuelvo por el api rest.
+- **(2)**, el `response.createError()` crea un Mono que falla con un `WebClientResponseException`, que contiene el
+  **estado de la respuesta, los encabezados, el cuerpo y la solicitud de origen.**
+
+Otra alternativa que habría producido lo mismo sería haber usado en vez del operador `exchangeToMono()`, el
+operador `retrieve()` y su implementación habría sido más corta, ya que, luego de que ocurra la excepción 400 por debajo
+el operador `bodyToMono()` después del `retrieve` habría lanzado la excepción en automático:
+
+````
+@Override
+public Mono<Product> saveProductWithValidation(Product product) {
+    return this.client.post().uri("/create-product-with-validation")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.APPLICATION_JSON)
+            .bodyValue(product)
+            .retrieve()
+            .bodyToMono(Product.class);
+}
+````
+
+Ahora, ubicados en el **ProductHandler**, en su handlerFunction **createProductWithValidation()** agregamos el operador
+`onErrorResume()` para manejar la excepción lanzada desde el **ProductServiceImpl**:
+
+````java
+
+@Component
+public class ProductHandler {
+    /* omitted code */
+    public Mono<ServerResponse> createProductWithValidation(ServerRequest request) {
+        String requestPathValue = request.requestPath().value();
+        Mono<Product> productMono = request.bodyToMono(Product.class);
+        return productMono
+                .flatMap(this.productService::saveProductWithValidation)
+                .flatMap(productDB -> ServerResponse
+                        .created(URI.create(requestPathValue + "/" + productDB.id()))
+                        .bodyValue(productDB)
+                )
+                .onErrorResume(throwable -> {
+                    WebClientResponseException responseException = (WebClientResponseException) throwable; // (1)
+                    if (responseException.getStatusCode().equals(HttpStatus.BAD_REQUEST)) {
+                        return ServerResponse.badRequest()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(responseException.getResponseBodyAsString(StandardCharsets.UTF_8));
+                    }
+                    return Mono.error(responseException);
+                });
+    }
+    /* omitted code */
+}
+````
+
+**(1)**, en el método `saveProductWithValidation()` del **ProductServiceImpl** estamos creando un Mono que falla con
+un `WebClientResponseException`, esto gracias a esta línea `response.createError()`. Ahora, en este handlerFunction
+debemos castear a dicha excepción `WebClientResponseException` de esa manera hacemos más específico el error y no tan
+genérico.
+
+Probando nuestro handlerFunction `createProductWithValidation` con datos correctos:
+
+````bash
+
+--- Response
+>
+< HTTP/1.1 201 Created
+< Location: /api/v1/client-app/create-product-with-validation/64e3e7c0a9ab217fba592dc6
+< Content-Type: application/json
+<
+{
+  "id": "64e3e7c0a9ab217fba592dc6",
+  "name": "Espejo",
+  "price": 150.6,
+  "createAt": "2023-08-21",
+  "image": null,
+  "category": {
+    "id": "64e3ce22a9ab217fba592db7",
+    "name": "Decoración"
+  }
+}
+````
+
+Verificando validación de nuestro handler `createProductWithValidation`:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{}" http://localhost:8095/api/v1/client-app/create-product-with-validation | jq
+
+--- Respuesta
+>
+< HTTP/1.1 400 Bad Request
+< Content-Type: application/json
+<
+{ [160 bytes data]
+100   162  100   160  100     2   1249     15 --:--:-- --:--:-- --:--:--  1265
+* Connection #0 to host localhost left intact
+[
+  "[Validación 2] El campo category must not be null",
+  "[Validación 2] El campo price must not be null",
+  "[Validación 2] El campo name must not be blank"
+]
+````
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Espejo\", \"category\": {}}" http://localhost:8095/api/v1/client-app/create-product-with-validation | jq
+
+--- Respuesta
+>
+< HTTP/1.1 400 Bad Request
+< Content-Type: application/json
+< Content-Length: 112
+<
+[
+  "[Validación 2] El campo category.id must not be blank",
+  "[Validación 2] El campo price must not be null"
+]
+````
+

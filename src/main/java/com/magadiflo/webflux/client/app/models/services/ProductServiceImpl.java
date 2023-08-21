@@ -48,7 +48,12 @@ public class ProductServiceImpl implements IProductService {
                 .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
                 .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
                 .bodyValue(product)
-                .exchangeToMono(response -> response.bodyToMono(Product.class));
+                .exchangeToMono(response -> {
+                    if (response.statusCode().equals(HttpStatus.CREATED)) {
+                        return response.bodyToMono(Product.class);
+                    }
+                    return response.createError();
+                });
     }
 
     @Override

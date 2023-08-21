@@ -2,13 +2,17 @@ package com.magadiflo.webflux.client.app.handlers;
 
 import com.magadiflo.webflux.client.app.models.dto.Product;
 import com.magadiflo.webflux.client.app.models.services.IProductService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class ProductHandler {
@@ -49,7 +53,16 @@ public class ProductHandler {
                 .flatMap(productDB -> ServerResponse
                         .created(URI.create(requestPathValue + "/" + productDB.id()))
                         .bodyValue(productDB)
-                );
+                )
+                .onErrorResume(throwable -> {
+                    WebClientResponseException responseException = (WebClientResponseException) throwable;
+                    if (responseException.getStatusCode().equals(HttpStatus.BAD_REQUEST)) {
+                        return ServerResponse.badRequest()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(responseException.getResponseBodyAsString(StandardCharsets.UTF_8));
+                    }
+                    return Mono.error(responseException);
+                });
     }
 
     public Mono<ServerResponse> updateProduct(ServerRequest request) {
