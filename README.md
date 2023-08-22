@@ -947,3 +947,115 @@ datos.
 `Vuelvo a recalcar, en mi caso no usé esa forma de manejo de excepción 404, ya que desde un principio utilicé el
 operador .switchIfEmpty(ServerResponse.notFound().build()) en los handlerFunctions y en el ProductServiceImple utilicé
 el .exchangeToFlux() o .exchangeToMono()` y tras las pruebas verifiqué que sí está funcionando como lo esperaba.
+
+# Sección: Spring Cloud Eureka Server: Registrando los microservicios
+
+---
+
+Convertiremos este microservicio en un **cliente de eureka para que pueda registrarse en el servidor de eureka**. Para
+eso agregaremos la dependencia de **eureka client**:
+
+````xml
+<!--Versión Spring Boot: 3.1.2-->
+<project>
+    <properties>
+        <java.version>17</java.version>
+        <spring-cloud.version>2022.0.4</spring-cloud.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
+````
+
+Cuando agregamos la dependencia de Eureka Client `spring-cloud-starter-netflix-eureka-client` **automáticamente** el
+microservicio **se habilita como un cliente de eureka**. Pero podemos ser explícitos y agregar una anotación en la
+clase principal para realizar esa habilitación, pero como se dijo, **tan solo agregando la dependencia ya estamos
+habilitándolo**, es decir, usar la anotación **es opcional**.
+
+````java
+
+@EnableDiscoveryClient //<-- (Opcional) Anotación para habilitar una implementación de DiscoveryClient.
+@SpringBootApplication
+public class MainApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(MainApplication.class, args);
+    }
+
+}
+````
+
+**NOTA**
+
+> En el curso de Andrés Guzmán y los cursos que he llevado con **versiones de Spring Boot <2.7.x** se usa la anotación
+> `@EnableEurekaClient`, pero en la versión de este proyecto de **Spring Boot 3.1.2 no se encuentra dicha anotación**,
+> pero sí está la anotación `@EnableDiscoveryClient` que técnicamente hacen lo mismo, aunque como se mencionó en un
+> párrafo anterior, **solo basta con agregar la dependencia en el pom.xml para que el proyecto quede habilitado como un
+> cliente de eureka**, por lo que usar la anotación es opcional.
+
+### @EnableEurekaClient vs @EnableDiscoveryClient
+
+- [Fuente: Stack Overflow.](https://stackoverflow.com/questions/31976236/whats-the-difference-between-enableeurekaclient-and-enablediscoveryclient)
+  Existen múltiples implementaciones del "Servicio de descubrimiento" **(Discovery Service)** como: eureka, consul,
+  zookeeper, etc. `@EnableDiscoveryClient` vive en **spring-cloud-commons** y elige la implementación en el classpath,
+  mientras que `@EnableEurekaClient` vive en **spring-cloud-netflix** y **solo funciona para Eureka**, si eureka está en
+  su classpath, en realidad ambos son iguales.
+
+- Si está utilizando **Eureka de Netflix, @EnableEurekaClient es específicamente para eso**. Pero si está utilizando
+  cualquier otro servicio de descubrimiento, incluido Eureka, puede usar **@EnableDiscoveryClient.**
+
+### Configurando ubicación de Eureka Server
+
+Configurar la ubicación física de **Eureka Server** en nuestro microservicio cliente **es opcional** siempre y cuando el
+Servidor de Eureka esté en la misma máquina (localhost) que nuestros microservicios clientes de eureka. Pero **sería
+mejor tenerlo configurado de forma explícita**.
+
+Una configuración adicional y requerida es el definirle un nombre a nuestra aplicación de Spring Boot y un puerto:
+
+````properties
+spring.application.name=service-client-app
+server.port=8095
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+````
+
+### Configurando el @Bean WebClient
+
+Debemos configurar el **WebClient** para que soporte **balanceo de carga**, para eso usamos la anotación
+`@LoadBalanced`, esta anotación **se usa para marcar un bean RestTemplate o WebClient que se configurará para utilizar
+un LoadBalancerClient.** En nuestro caso estamos trabajando con **WebClient** así que en la clase de configuración
+**ApplicationConfig** agregamos dicha anotación y modificamos la forma cómo construiremos el @Bean de WebClient.
+Recordar que anteriormente usamos el `WebClient.create(" url del endpoint de product ")`, pero ahora usaremos el
+`WebClient.builder().baseUrl(" url del endpoint del product ").build()`, son dos enfoques, la diferencia es la forma en
+cómo se está creando la instancia de WebClient y cómo se configura la url base.
+
+También cambiaremos la url, anteriormente estaba apuntando a `localhost:8080` pero ahora apuntará al nombre del
+microservicio de donde consumiremos el api rest de productos `service-product-api-rest`, de forma automática nos
+comunicaremos a ese api rest mediante el servidor de Eureka y el identificador `service-product-api-rest`:
+
+````java
+
+@Configuration
+public class ApplicationConfig {
+
+    @Bean
+    @LoadBalanced
+    public WebClient webClient() {
+        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products").build();
+    }
+}
+````
