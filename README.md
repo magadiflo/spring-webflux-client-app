@@ -1112,3 +1112,140 @@ public class ProductServiceImpl implements IProductService {
      */
 }
 ````
+
+## Escalando más instancias y probando los microservicios
+
+Una vez que ya tengamos nuestros microservicios **spring-webflux-client-app** y **spring-webflux-api-rest**
+correctamente configurados como clientes eureka, debemos levantar el servidor de eureka y a continuación los
+microservicios antes mencionados para empezar a realizar las pruebas.
+
+Ahora realizaremos la petición al microservicio **spring-webflux-client-app** y por debajo, este microservicio
+se deberá conectar a alguna instancia levantada del microservicio **spring-webflux-api-rest** con la ayuda del
+servidor de eureka:
+
+Listando los productos:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app | jq
+
+-- Respuesta
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+[
+  {
+    "id": "64e54892f8e79f50f78d4df1",
+    "name": "Sony Cámara HD",
+    "price": 680.6,
+    "createAt": "2023-08-22",
+    "image": null,
+    "category": {
+      "id": "64e54891f8e79f50f78d4dec",
+      "name": "Electrónico"
+    }
+  },
+  {...}
+  ]
+````
+
+Ver un producto en particular:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app/64e54892f8e79f50f78d4df1 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54892f8e79f50f78d4df1",
+  "name": "Sony Cámara HD",
+  "price": 680.6,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Crear un producto:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Cuadro de Picazzo\", \"price\": 550.80, \"category\": {\"id\": \"64e54891f8e79f50f78d4dec\", \"name\": \"Electrónico\"}}" http://localhost:8095/api/v1/client-app | jq Note: Unnecessary use of -X or --request, POST is already inferred.
+
+--- Respuesta
+>
+< HTTP/1.1 201 Created
+< Location: /api/v1/client-app/64e54a806f24f8001eb8fa86
+< Content-Type: application/json
+<
+{
+  "id": "64e54a806f24f8001eb8fa86",
+  "name": "Cuadro de Picazzo",
+  "price": 550.8,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Actualizar un producto:
+
+````bash
+curl -v -X PUT -H "Content-Type: application/json" -d "{\"name\": \"PC Gamer\", \"price\": 999.99, \"category\": {\"id\": \"64e54891f8e79f50f78d4dec\", \"name\": \"Electrónico\"}}" http://localhost:8095/api/v1/client-app/64e54a806f24f8001eb8fa86 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54a806f24f8001eb8fa86",
+  "name": "PC Gamer",
+  "price": 999.99,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Eliminar un producto
+
+````bash
+curl -v -X DELETE http://localhost:8095/api/v1/client-app/64e54a806f24f8001eb8fa86 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 204 No Content
+````
+
+Subiendo una imagen a un producto:
+
+````bash
+curl -v -X POST -H "Content-Type: multipart/form-data" -F "imageFile=@C:\Users\USUARIO\Downloads\armario.png" http://localhost:8095/api/v1/client-app/upload/64e54892f8e79f50f78d4df5 | jq
+
+--- Response
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54892f8e79f50f78d4df5",
+  "name": "Celular Huawey",
+  "price": 900,
+  "createAt": "2023-08-22",
+  "image": "70414ed7-6a09-4fc2-8832-c83d56117d3c-armario.png",
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+````
