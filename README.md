@@ -773,3 +773,47 @@ curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Espejo\", \
 ]
 ````
 
+## Añadiendo el upload en el Service
+
+En nuestra interfaz **IProductService** agregamos un nuevo método para subir las imágenes:
+
+````java
+public interface IProductService {
+    /* omitted code */
+    Mono<Product> imageUpload(String id, FilePart imageFile);
+}
+````
+
+Implementamos el método:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+    /* omitted code */
+    @Override
+    public Mono<Product> imageUpload(String id, FilePart imageFile) {
+        MultipartBodyBuilder parts = new MultipartBodyBuilder();
+        parts.asyncPart("imageFile", imageFile.content(), DataBuffer.class)
+                .headers(httpHeaders -> {
+                    httpHeaders.setContentDispositionFormData("imageFile", imageFile.filename());
+                });
+        return this.client.post().uri("/upload/{id}", Collections.singletonMap("id", id))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .bodyValue(parts.build())
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
+    }
+}
+````
+
+- `MultipartBodyBuilder parts = new MultipartBodyBuilder()`: Se crea un MultipartBodyBuilder, que se utiliza para
+  **construir una solicitud HTTP multipart**. Esto es necesario, ya que estamos enviando una imagen como parte del
+  formulario multipart.
+- `parts.asyncPart("imageFile", imageFile.content(), DataBuffer.class)`: Aquí se agrega la parte del formulario
+  multipart que corresponde al archivo de imagen. `asyncPart` **indica que estás manejando contenido asíncrono.** Estás
+  pasando el contenido del imageFile y especificando la clase `DataBuffer.class` para el tipo del contenido.
+- `.headers(httpHeaders -> { ... })`: Aquí se configuran las cabeceras para la parte del formulario multipart. En
+  particular, **se establece el encabezado de disposición de contenido con el nombre del archivo de imagen.**
+- `.contentType(MediaType.MULTIPART_FORM_DATA)`: Estableciendo el **tipo de contenido de la solicitud como
+  multipart/form-data.**
+

@@ -1,8 +1,11 @@
 package com.magadiflo.webflux.client.app.models.services;
 
 import com.magadiflo.webflux.client.app.models.dto.Product;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -69,5 +72,18 @@ public class ProductServiceImpl implements IProductService {
     public Mono<Boolean> deleteProduct(String id) {
         return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
                 .exchangeToMono(response -> response.statusCode().equals(HttpStatus.NO_CONTENT) ? Mono.just(true) : Mono.just(false));
+    }
+
+    @Override
+    public Mono<Product> imageUpload(String id, FilePart imageFile) {
+        MultipartBodyBuilder parts = new MultipartBodyBuilder();
+        parts.asyncPart("imageFile", imageFile.content(), DataBuffer.class)
+                .headers(httpHeaders -> {
+                    httpHeaders.setContentDispositionFormData("imageFile", imageFile.filename());
+                });
+        return this.client.post().uri("/upload/{id}", Collections.singletonMap("id", id))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .bodyValue(parts.build())
+                .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 }
