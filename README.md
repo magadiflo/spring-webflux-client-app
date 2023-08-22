@@ -892,3 +892,58 @@ curl -v -X POST -H "Content-Type: multipart/form-data" -F "imageFile=@C:\Users\U
 >
 < HTTP/1.1 404 Not Found
 ````
+
+---
+
+## Añadiendo manejo de error 404 en el handler
+
+Este apartado es solo para tenerlo como referencia, como parte de lo que se desarrolló en el curso, aunque vale la pena
+decir que yo no lo utilicé en mi código, pues **implementé el manejo del error 404** usando el operador
+`.switchIfEmpty(ServerResponse.notFound().build())` dentro de los métodos `handlerFunction`.
+
+En primer lugar, los métodos del **ProductoServiceImpl** que implementó Andrés Guzmán, en la mayoría, usa el
+`.retrieve().bodyToMono(Product.class)` para procesar la petición al endpoint que consumimos. En mi caso, si vemos
+los métodos de mi **ProductServiceImpl** utilizo el `exchangeToFlux()` o el `exchangeToMono`.
+
+Ahora, la implementación que hizo Andrés Guzmán para manejar el **error 404** fue creando el método **errorHandler()**
+dentro de su ProductoHandler y los handlerFunction que se espera que lancen en algún momento el error 404 fueron
+envueltos por dicho método, veamos el ejemplo:
+
+````java
+
+@Component
+public class ProductoHandler {
+    /* other code */
+    public Mono<ServerResponse> ver(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return this.errorHandler(this.service.findById(id).flatMap(/*...*/)/*sigue el método*/); //<-- El método recibe el Mono<ServerResponse>
+    }
+
+    public Mono<ServerResponse> eliminar(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return this.errorHandler(this.service.delete(id).then(ServerResponse.noContent().build()));
+    }
+    /* other code */
+
+    private Mono<ServerResponse> errorHandler(Mono<ServerResponse> responseMono) {
+        return responseMono.onErrorResume(throwable -> {
+            WebClientResponseException errorResponse = (WebClientResponseException) throwable;
+            if (errorResponse.getStatusCode() == HttpStatus.NOT_FOUND) {
+                Map<String, Object> body = new HashMap<>();
+                body.put("error", "No existe el producto ".concat(errorResponse.getMessage()));
+                body.put("timestamp", new Date());
+                body.put("status", errorResponse.getStatusCode().value());
+                return ServerResponse.status(HttpStatus.NOT_FOUND).bodyValue(body); // Si queremos podemos enviar algún mensaje en el cuerpo del error 404 NOT_FOUND
+            }
+            return Mono.error(errorResponse);
+        });
+    }
+}
+````
+
+Listo, de esa forma logró manejar el error 404 cuando se hacía la consulta por un recurso que no existía en la base de
+datos.
+
+`Vuelvo a recalcar, en mi caso no usé esa forma de manejo de excepción 404, ya que desde un principio utilicé el
+operador .switchIfEmpty(ServerResponse.notFound().build()) en los handlerFunctions y en el ProductServiceImple utilicé
+el .exchangeToFlux() o .exchangeToMono()` y tras las pruebas verifiqué que sí está funcionando como lo esperaba.
