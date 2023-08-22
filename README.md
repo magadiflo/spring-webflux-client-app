@@ -1033,29 +1033,82 @@ server.port=8095
 eureka.client.service-url.defaultZone=http://localhost:8761/eureka
 ````
 
-### Configurando el @Bean WebClient
+### Modificando configuración del @Bean WebClient
 
-Debemos configurar el **WebClient** para que soporte **balanceo de carga**, para eso usamos la anotación
-`@LoadBalanced`, esta anotación **se usa para marcar un bean RestTemplate o WebClient que se configurará para utilizar
-un LoadBalancerClient.** En nuestro caso estamos trabajando con **WebClient** así que en la clase de configuración
-**ApplicationConfig** agregamos dicha anotación y modificamos la forma cómo construiremos el @Bean de WebClient.
-Recordar que anteriormente usamos el `WebClient.create(" url del endpoint de product ")`, pero ahora usaremos el
-`WebClient.builder().baseUrl(" url del endpoint del product ").build()`, son dos enfoques, la diferencia es la forma en
-cómo se está creando la instancia de WebClient y cómo se configura la url base.
+Debemos configurar el **WebClient** para que soporte los microservicios y **balanceo de carga**, para eso usamos la
+anotación `@LoadBalanced`, esta anotación **se usa para marcar un bean RestTemplate o WebClient que se configurará para
+utilizar un LoadBalancerClient.** En nuestro caso estamos trabajando con **WebClient** así que en la clase de
+configuración **ApplicationConfig** agregamos dicha anotación y **modificamos la forma cómo construimos el @Bean de
+WebClient.**
 
-También cambiaremos la url, anteriormente estaba apuntando a `localhost:8080` pero ahora apuntará al nombre del
-microservicio de donde consumiremos el api rest de productos `service-product-api-rest`, de forma automática nos
-comunicaremos a ese api rest mediante el servidor de Eureka y el identificador `service-product-api-rest`:
+Recordar que, **antes de que usemos Eureka**, nos conectábamos al microservicio **spring-webflux-api-rest**
+directamente a través de su dirección `http://localhost:8080/api/v2/products` y en el **ApplicationConfig**
+agregábamos el @Bean de **WebClient**, tal como se ve a continuación:
 
 ````java
 
 @Configuration
 public class ApplicationConfig {
+    @Bean
+    public WebClient webClient() {
+        return WebClient.create("http://localhost:8080/api/v2/products");
+    }
+}
+````
 
+Como se observa en el código anterior, usábamos el método estático `.create()` para definirle la url base a donde se
+realizarían las peticiones. Es decir, estamos configurando manualmente la URL base del WebClient para apuntar
+directamente al servicio "http://localhost:8080/api/v2/products". Esto significa que estamos estableciendo una dirección
+fija y específica para acceder a ese servicio, por lo que si se agregan o eliminan instancias del servicio, no se
+manejará automáticamente el balanceo de carga ni la resolución de nombres. Este enfoque es adecuado cuando conoces la
+ubicación y el puerto del servicio al que deseas acceder, pero **no ofrece las ventajas de descubrimiento automático y
+balanceo de carga que proporciona Eureka.**
+
+Ahora, cambiaremos de enfoque y **utilizaremos la siguiente configuración:**
+
+````java
+
+@Configuration
+public class ApplicationConfig {
     @Bean
     @LoadBalanced
-    public WebClient webClient() {
-        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products").build();
+    public WebClient.Builder webClient() {
+        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products");
     }
+}
+````
+
+En la configuración anterior vemos varias modificaciones a nuestro **@Bean WebClient** y esto se da porque ahora
+nuestras aplicaciones están utilizando **Eureka Server** para el descubrimiento de servicios y el balanceo de carga.
+Anotamos además a nuestro bean con `@LoadBalanced`, con esta anotación le estamos indicando a Spring que utilice la
+infraestructura de Eureka para manejar la resolución de nombres y el balanceo de carga. En este caso, **no necesitamos
+proporcionar la URL completa al servicio en el bean.** En su lugar, simplemente **utilizas un nombre de servicio
+registrado en Eureka, en este caso, "service-product-api-rest"** y Spring se encargará de resolver la dirección IP y el
+puerto correctos para el servicio.
+
+La ventaja de este enfoque es que puedes escalar y ajustar los servicios detrás de Eureka sin tener que cambiar la
+configuración de tus clientes. Si agregas o quitas instancias de un servicio, Eureka se encargará de actualizar
+automáticamente las direcciones disponibles para el balanceo de carga, lo que facilita la escalabilidad y la resiliencia
+de tu sistema.
+
+Finalmente, modificamos la inyección de dependencia que hacemos del **WebClient** en el **ProductServiceImpl**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+
+    private final WebClient.Builder client;
+
+    public ProductServiceImpl(WebClient.Builder client) {
+        this.client = client;
+    }
+    /**
+     * En todos los métodos agregar el .build():
+     * this.client.build().get()
+     * this.client.build().post()
+     * this.client.build().put()
+     * this.client.build().delete()
+     */
 }
 ````

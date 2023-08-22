@@ -9,7 +9,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class ApplicationConfig {
     @Bean
     @LoadBalanced
-    public WebClient webClient() {
-        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products").build();
+    public WebClient.Builder webClient() {
+        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products");
     }
 }
