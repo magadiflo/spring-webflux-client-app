@@ -817,3 +817,78 @@ public class ProductServiceImpl implements IProductService {
 - `.contentType(MediaType.MULTIPART_FORM_DATA)`: Estableciendo el **tipo de contenido de la solicitud como
   multipart/form-data.**
 
+## Implementando el imageUpload en el handlerFunction
+
+Creamos el handlerFunction **imageUpload()** que llamará a nuestra función implementada en a sección anterior:
+
+````java
+
+@Component
+public class ProductHandler {
+    /* omitted code */
+    public Mono<ServerResponse> imageUpload(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return request.multipartData()
+                .map(MultiValueMap::toSingleValueMap)
+                .map(stringPartMap -> stringPartMap.get("imageFile"))
+                .cast(FilePart.class)
+                .flatMap(filePart -> this.productService.imageUpload(id, filePart))
+                .flatMap(productDB -> ServerResponse.ok().bodyValue(productDB))
+                .switchIfEmpty(ServerResponse.notFound().build());
+    }
+}
+````
+
+El método anterior es similar a cómo lo implementamos en el proyecto **spring-webflux-api-rest**, quizás con alguna
+variación.
+
+Agregamos el router que tendrá nuestro endpoint para subir la imagen:
+
+````java
+
+@Configuration
+public class RouterConfig {
+    @Bean
+    public RouterFunction<ServerResponse> routes(ProductHandler handler) {
+        return RouterFunctions.route(RequestPredicates.GET("/api/v1/client-app"), handler::findAllProducts)
+                .andRoute(RequestPredicates.GET("/api/v1/client-app/{id}"), handler::showProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app"), handler::createProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app/create-product-with-validation"), handler::createProductWithValidation)
+                .andRoute(RequestPredicates.PUT("/api/v1/client-app/{id}"), handler::updateProduct)
+                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app/upload/{id}"), handler::imageUpload);
+    }
+}
+````
+
+Subiendo imagen para un **producto existente:**
+
+````bash
+curl -v -X POST -H "Content-Type: multipart/form-data" -F "imageFile=@C:\Users\USUARIO\Downloads\armario.png" http://localhost:8095/api/v1/client-app/upload/64e3ce23a9ab217fba592dc3 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+{
+  "id": "64e3ce23a9ab217fba592dc3",
+  "name": "Armario 2 puertas",
+  "price": 910,
+  "createAt": "2023-08-21",
+  "image": "16f773cb-ea00-4582-b4c5-6215f7cc33a1-armario.png",
+  "category": {
+    "id": "64e3ce22a9ab217fba592db6",
+    "name": "Muebles"
+  }
+}
+````
+
+Subiendo imagen para un **producto cuyo id no existe:**
+
+````bash
+curl -v -X POST -H "Content-Type: multipart/form-data" -F "imageFile=@C:\Users\USUARIO\Downloads\armario.png" http://localhost:8095/api/v1/client-app/upload/64e3ce23a9ab217fgggggggg | jq
+
+--- Respuesta
+>
+< HTTP/1.1 404 Not Found
+````

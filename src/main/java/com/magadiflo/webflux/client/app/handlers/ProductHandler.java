@@ -4,7 +4,9 @@ import com.magadiflo.webflux.client.app.models.dto.Product;
 import com.magadiflo.webflux.client.app.models.services.IProductService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Component;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -79,6 +81,17 @@ public class ProductHandler {
         return this.productService.deleteProduct(id)
                 .flatMap(wasDeleted -> wasDeleted ? Mono.just(true) : Mono.empty())
                 .flatMap(wasDeleted -> ServerResponse.noContent().build())
+                .switchIfEmpty(ServerResponse.notFound().build());
+    }
+
+    public Mono<ServerResponse> imageUpload(ServerRequest request) {
+        String id = request.pathVariable("id");
+        return request.multipartData()
+                .map(MultiValueMap::toSingleValueMap)
+                .map(stringPartMap -> stringPartMap.get("imageFile"))
+                .cast(FilePart.class)
+                .flatMap(filePart -> this.productService.imageUpload(id, filePart))
+                .flatMap(productDB -> ServerResponse.ok().bodyValue(productDB))
                 .switchIfEmpty(ServerResponse.notFound().build());
     }
 }

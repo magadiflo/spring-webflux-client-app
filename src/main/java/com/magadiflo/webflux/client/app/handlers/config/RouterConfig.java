@@ -14,6 +14,7 @@ public class RouterConfig {
                 .andRoute(RequestPredicates.POST("/api/v1/client-app"), handler::createProduct)
                 .andRoute(RequestPredicates.POST("/api/v1/client-app/create-product-with-validation"), handler::createProductWithValidation)
                 .andRoute(RequestPredicates.PUT("/api/v1/client-app/{id}"), handler::updateProduct)
-                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct);
+                .andRoute(RequestPredicates.DELETE("/api/v1/client-app/{id}"), handler::deleteProduct)
+                .andRoute(RequestPredicates.POST("/api/v1/client-app/upload/{id}"), handler::imageUpload);
     }
 }
