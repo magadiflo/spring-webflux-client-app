@@ -947,3 +947,305 @@ datos.
 `Vuelvo a recalcar, en mi caso no usé esa forma de manejo de excepción 404, ya que desde un principio utilicé el
 operador .switchIfEmpty(ServerResponse.notFound().build()) en los handlerFunctions y en el ProductServiceImple utilicé
 el .exchangeToFlux() o .exchangeToMono()` y tras las pruebas verifiqué que sí está funcionando como lo esperaba.
+
+# Sección: Spring Cloud Eureka Server: Registrando los microservicios
+
+---
+
+Convertiremos este microservicio en un **cliente de eureka para que pueda registrarse en el servidor de eureka**. Para
+eso agregaremos la dependencia de **eureka client**:
+
+````xml
+<!--Versión Spring Boot: 3.1.2-->
+<project>
+    <properties>
+        <java.version>17</java.version>
+        <spring-cloud.version>2022.0.4</spring-cloud.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
+````
+
+Cuando agregamos la dependencia de Eureka Client `spring-cloud-starter-netflix-eureka-client` **automáticamente** el
+microservicio **se habilita como un cliente de eureka**. Pero podemos ser explícitos y agregar una anotación en la
+clase principal para realizar esa habilitación, pero como se dijo, **tan solo agregando la dependencia ya estamos
+habilitándolo**, es decir, usar la anotación **es opcional**.
+
+````java
+
+@EnableDiscoveryClient //<-- (Opcional) Anotación para habilitar una implementación de DiscoveryClient.
+@SpringBootApplication
+public class MainApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(MainApplication.class, args);
+    }
+
+}
+````
+
+**NOTA**
+
+> En el curso de Andrés Guzmán y los cursos que he llevado con **versiones de Spring Boot <2.7.x** se usa la anotación
+> `@EnableEurekaClient`, pero en la versión de este proyecto de **Spring Boot 3.1.2 no se encuentra dicha anotación**,
+> pero sí está la anotación `@EnableDiscoveryClient` que técnicamente hacen lo mismo, aunque como se mencionó en un
+> párrafo anterior, **solo basta con agregar la dependencia en el pom.xml para que el proyecto quede habilitado como un
+> cliente de eureka**, por lo que usar la anotación es opcional.
+
+### @EnableEurekaClient vs @EnableDiscoveryClient
+
+- [Fuente: Stack Overflow.](https://stackoverflow.com/questions/31976236/whats-the-difference-between-enableeurekaclient-and-enablediscoveryclient)
+  Existen múltiples implementaciones del "Servicio de descubrimiento" **(Discovery Service)** como: eureka, consul,
+  zookeeper, etc. `@EnableDiscoveryClient` vive en **spring-cloud-commons** y elige la implementación en el classpath,
+  mientras que `@EnableEurekaClient` vive en **spring-cloud-netflix** y **solo funciona para Eureka**, si eureka está en
+  su classpath, en realidad ambos son iguales.
+
+- Si está utilizando **Eureka de Netflix, @EnableEurekaClient es específicamente para eso**. Pero si está utilizando
+  cualquier otro servicio de descubrimiento, incluido Eureka, puede usar **@EnableDiscoveryClient.**
+
+### Configurando ubicación de Eureka Server
+
+Configurar la ubicación física de **Eureka Server** en nuestro microservicio cliente **es opcional** siempre y cuando el
+Servidor de Eureka esté en la misma máquina (localhost) que nuestros microservicios clientes de eureka. Pero **sería
+mejor tenerlo configurado de forma explícita**.
+
+Una configuración adicional y requerida es el definirle un nombre a nuestra aplicación de Spring Boot y un puerto:
+
+````properties
+spring.application.name=service-client-app
+server.port=8095
+eureka.client.service-url.defaultZone=http://localhost:8761/eureka
+````
+
+### Modificando configuración del @Bean WebClient
+
+Debemos configurar el **WebClient** para que soporte los microservicios y **balanceo de carga**, para eso usamos la
+anotación `@LoadBalanced`, esta anotación **se usa para marcar un bean RestTemplate o WebClient que se configurará para
+utilizar un LoadBalancerClient.** En nuestro caso estamos trabajando con **WebClient** así que en la clase de
+configuración **ApplicationConfig** agregamos dicha anotación y **modificamos la forma cómo construimos el @Bean de
+WebClient.**
+
+Recordar que, **antes de que usemos Eureka**, nos conectábamos al microservicio **spring-webflux-api-rest**
+directamente a través de su dirección `http://localhost:8080/api/v2/products` y en el **ApplicationConfig**
+agregábamos el @Bean de **WebClient**, tal como se ve a continuación:
+
+````java
+
+@Configuration
+public class ApplicationConfig {
+    @Bean
+    public WebClient webClient() {
+        return WebClient.create("http://localhost:8080/api/v2/products");
+    }
+}
+````
+
+Como se observa en el código anterior, usábamos el método estático `.create()` para definirle la url base a donde se
+realizarían las peticiones. Es decir, estamos configurando manualmente la URL base del WebClient para apuntar
+directamente al servicio "http://localhost:8080/api/v2/products". Esto significa que estamos estableciendo una dirección
+fija y específica para acceder a ese servicio, por lo que si se agregan o eliminan instancias del servicio, no se
+manejará automáticamente el balanceo de carga ni la resolución de nombres. Este enfoque es adecuado cuando conoces la
+ubicación y el puerto del servicio al que deseas acceder, pero **no ofrece las ventajas de descubrimiento automático y
+balanceo de carga que proporciona Eureka.**
+
+Ahora, cambiaremos de enfoque y **utilizaremos la siguiente configuración:**
+
+````java
+
+@Configuration
+public class ApplicationConfig {
+    @Bean
+    @LoadBalanced
+    public WebClient.Builder webClient() {
+        return WebClient.builder().baseUrl("http://service-product-api-rest/api/v2/products");
+    }
+}
+````
+
+En la configuración anterior vemos varias modificaciones a nuestro **@Bean WebClient** y esto se da porque ahora
+nuestras aplicaciones están utilizando **Eureka Server** para el descubrimiento de servicios y el balanceo de carga.
+Anotamos además a nuestro bean con `@LoadBalanced`, con esta anotación le estamos indicando a Spring que utilice la
+infraestructura de Eureka para manejar la resolución de nombres y el balanceo de carga. En este caso, **no necesitamos
+proporcionar la URL completa al servicio en el bean.** En su lugar, simplemente **utilizas un nombre de servicio
+registrado en Eureka, en este caso, "service-product-api-rest"** y Spring se encargará de resolver la dirección IP y el
+puerto correctos para el servicio.
+
+La ventaja de este enfoque es que puedes escalar y ajustar los servicios detrás de Eureka sin tener que cambiar la
+configuración de tus clientes. Si agregas o quitas instancias de un servicio, Eureka se encargará de actualizar
+automáticamente las direcciones disponibles para el balanceo de carga, lo que facilita la escalabilidad y la resiliencia
+de tu sistema.
+
+Finalmente, modificamos la inyección de dependencia que hacemos del **WebClient** en el **ProductServiceImpl**:
+
+````java
+
+@Service
+public class ProductServiceImpl implements IProductService {
+
+    private final WebClient.Builder client;
+
+    public ProductServiceImpl(WebClient.Builder client) {
+        this.client = client;
+    }
+    /**
+     * En todos los métodos agregar el .build():
+     * this.client.build().get()
+     * this.client.build().post()
+     * this.client.build().put()
+     * this.client.build().delete()
+     */
+}
+````
+
+## Escalando más instancias y probando los microservicios
+
+Una vez que ya tengamos nuestros microservicios **spring-webflux-client-app** y **spring-webflux-api-rest**
+correctamente configurados como clientes eureka, debemos levantar el servidor de eureka y a continuación los
+microservicios antes mencionados para empezar a realizar las pruebas.
+
+Ahora realizaremos la petición al microservicio **spring-webflux-client-app** y por debajo, este microservicio
+se deberá conectar a alguna instancia levantada del microservicio **spring-webflux-api-rest** con la ayuda del
+servidor de eureka:
+
+Listando los productos:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app | jq
+
+-- Respuesta
+>
+< HTTP/1.1 200 OK
+< transfer-encoding: chunked
+< Content-Type: application/json
+[
+  {
+    "id": "64e54892f8e79f50f78d4df1",
+    "name": "Sony Cámara HD",
+    "price": 680.6,
+    "createAt": "2023-08-22",
+    "image": null,
+    "category": {
+      "id": "64e54891f8e79f50f78d4dec",
+      "name": "Electrónico"
+    }
+  },
+  {...}
+  ]
+````
+
+Ver un producto en particular:
+
+````bash
+curl -v http://localhost:8095/api/v1/client-app/64e54892f8e79f50f78d4df1 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54892f8e79f50f78d4df1",
+  "name": "Sony Cámara HD",
+  "price": 680.6,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Crear un producto:
+
+````bash
+curl -v -X POST -H "Content-Type: application/json" -d "{\"name\": \"Cuadro de Picazzo\", \"price\": 550.80, \"category\": {\"id\": \"64e54891f8e79f50f78d4dec\", \"name\": \"Electrónico\"}}" http://localhost:8095/api/v1/client-app | jq Note: Unnecessary use of -X or --request, POST is already inferred.
+
+--- Respuesta
+>
+< HTTP/1.1 201 Created
+< Location: /api/v1/client-app/64e54a806f24f8001eb8fa86
+< Content-Type: application/json
+<
+{
+  "id": "64e54a806f24f8001eb8fa86",
+  "name": "Cuadro de Picazzo",
+  "price": 550.8,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Actualizar un producto:
+
+````bash
+curl -v -X PUT -H "Content-Type: application/json" -d "{\"name\": \"PC Gamer\", \"price\": 999.99, \"category\": {\"id\": \"64e54891f8e79f50f78d4dec\", \"name\": \"Electrónico\"}}" http://localhost:8095/api/v1/client-app/64e54a806f24f8001eb8fa86 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54a806f24f8001eb8fa86",
+  "name": "PC Gamer",
+  "price": 999.99,
+  "createAt": "2023-08-22",
+  "image": null,
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+}
+````
+
+Eliminar un producto
+
+````bash
+curl -v -X DELETE http://localhost:8095/api/v1/client-app/64e54a806f24f8001eb8fa86 | jq
+
+--- Respuesta
+>
+< HTTP/1.1 204 No Content
+````
+
+Subiendo una imagen a un producto:
+
+````bash
+curl -v -X POST -H "Content-Type: multipart/form-data" -F "imageFile=@C:\Users\USUARIO\Downloads\armario.png" http://localhost:8095/api/v1/client-app/upload/64e54892f8e79f50f78d4df5 | jq
+
+--- Response
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+<
+{
+  "id": "64e54892f8e79f50f78d4df5",
+  "name": "Celular Huawey",
+  "price": 900,
+  "createAt": "2023-08-22",
+  "image": "70414ed7-6a09-4fc2-8832-c83d56117d3c-armario.png",
+  "category": {
+    "id": "64e54891f8e79f50f78d4dec",
+    "name": "Electrónico"
+  }
+````
