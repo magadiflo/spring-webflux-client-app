@@ -16,29 +16,29 @@ import java.util.Collections;
 @Service
 public class ProductServiceImpl implements IProductService {
 
-    private final WebClient client;
+    private final WebClient.Builder client;
 
-    public ProductServiceImpl(WebClient client) {
+    public ProductServiceImpl(WebClient.Builder client) {
         this.client = client;
     }
 
     @Override
     public Flux<Product> findAllProducts() {
-        return this.client.get()
+        return this.client.build().get()
                 .accept(MediaType.APPLICATION_JSON)
                 .exchangeToFlux(response -> response.bodyToFlux(Product.class));
     }
 
     @Override
     public Mono<Product> findProduct(String id) {
-        return this.client.get().uri("/{id}", Collections.singletonMap("id", id))
+        return this.client.build().get().uri("/{id}", Collections.singletonMap("id", id))
                 .accept(MediaType.APPLICATION_JSON)
                 .exchangeToMono(response -> response.bodyToMono(Product.class));
     }
 
     @Override
     public Mono<Product> saveProduct(Product product) {
-        return this.client.post()
+        return this.client.build().post()
                 .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
                 .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
                 .bodyValue(product)
@@ -47,7 +47,7 @@ public class ProductServiceImpl implements IProductService {
 
     @Override
     public Mono<Product> saveProductWithValidation(Product product) {
-        return this.client.post().uri("/create-product-with-validation")
+        return this.client.build().post().uri("/create-product-with-validation")
                 .contentType(MediaType.APPLICATION_JSON)    // <-- tipo de contenido que enviamos en el Request
                 .accept(MediaType.APPLICATION_JSON)// <-- tipo de contenido que aceptamos en el Response
                 .bodyValue(product)
@@ -61,7 +61,7 @@ public class ProductServiceImpl implements IProductService {
 
     @Override
     public Mono<Product> updateProduct(String id, Product product) {
-        return this.client.put().uri("/{id}", Collections.singletonMap("id", id))
+        return this.client.build().put().uri("/{id}", Collections.singletonMap("id", id))
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .bodyValue(product)
@@ -70,7 +70,7 @@ public class ProductServiceImpl implements IProductService {
 
     @Override
     public Mono<Boolean> deleteProduct(String id) {
-        return this.client.delete().uri("/{id}", Collections.singletonMap("id", id))
+        return this.client.build().delete().uri("/{id}", Collections.singletonMap("id", id))
                 .exchangeToMono(response -> response.statusCode().equals(HttpStatus.NO_CONTENT) ? Mono.just(true) : Mono.just(false));
     }
 
@@ -81,7 +81,7 @@ public class ProductServiceImpl implements IProductService {
                 .headers(httpHeaders -> {
                     httpHeaders.setContentDispositionFormData("imageFile", imageFile.filename());
                 });
-        return this.client.post().uri("/upload/{id}", Collections.singletonMap("id", id))
+        return this.client.build().post().uri("/upload/{id}", Collections.singletonMap("id", id))
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .bodyValue(parts.build())
                 .exchangeToMono(response -> response.bodyToMono(Product.class));
